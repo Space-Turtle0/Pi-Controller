@@ -1,0 +1,105 @@
+from discord.ext import commands, tasks
+from tinydb import TinyDB, Query
+import datetime
+import pytz
+import discord
+import requests
+import psutil
+import random
+import sys
+import os
+
+
+def rgb():
+    value = random.randint(0, 255)
+    return value
+
+
+def is_admin(ctx):
+    program_dir = os.path.realpath(os.path.dirname(sys.argv[0]))
+    with TinyDB(os.path.join(program_dir, "data.json"), indent=4) as data:
+        admins = data.table("admins")
+        query = Query()
+        test = admins.search(query.id == ctx.message.author.id)
+        if len(test) == 1:
+            return True
+
+
+class Core(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+        self.sys_status = {}
+        self.sys_monitor.start()
+        self.platform = sys.platform
+        self.data_path = os.path.realpath(os.path.dirname(sys.argv[0]))
+
+    @commands.group()
+    async def admins(self, ctx):
+        if ctx.invoked_subcommand is None:
+            await ctx.send("Invalid command.")
+
+    @admins.command()
+    async def list(self, ctx):
+        with TinyDB(os.path.join(self.data_path, "data.json"), indent=4) as data:
+            admins = data.table("admins")
+            msg = "Bot admins:"
+            for admin in admins:
+                try:
+                    user = self.bot.get_user(admin['id'])
+                    msg += "\n{}".format(user.mention)
+                except commands.BadArgument:
+                    continue
+            await ctx.send(msg)
+
+    @admins.command(pass_context=True)
+    @commands.check(is_admin)
+    async def add(self, ctx, user: discord.User):
+        with TinyDB(os.path.join(self.data_path, "data.json"), indent=4) as data:
+            admins = data.table("admins")
+            search = Query()
+            if len(admins.search(search.id == user.id)) == 0:
+                admins.insert({"id": user.id})
+                await ctx.send("{} is now a bot admin.".format(user.mention))
+            else:
+                await ctx.send("{} is already a bot admin.".format(user.mention))
+
+    @commands.command()
+    async def status(self, ctx):
+        embed = discord.Embed(title="System Status",
+                              timestamp=self.sys_status["UPDATE"],
+                              color=discord.Color.from_rgb(rgb(), rgb(), rgb()), description="Updated every minute.")
+        embed.add_field(name="RAM", value="{}%".format(self.sys_status["RAM"]))
+        embed.add_field(name="CPU", value="{}%".format(self.sys_status["CPU"]))
+        embed.add_field(name="DISK", value="{}%".format(self.sys_status["DISK"]))
+        if self.platform == 'linux':  # platform specific feature
+            embed.add_field(name="Temperature",
+                            value="{}°C/{}°F".format(self.sys_status["TEMPC"], self.sys_status["TEMPF"]))
+        embed.add_field(name="Boot Time", value=self.sys_status["BOOT"], inline=False)
+        embed.add_field(name="IP Address", value=self.sys_status["IP"], inline=False)
+        await ctx.send(embed=embed)
+
+    @add.error
+    async def add_error(self, ctx, error):
+        if isinstance(error, commands.BadArgument):
+            await ctx.send(error.args[0])
+
+    @commands.command()
+    async def invite(self, ctx):
+        await ctx.send("https://discord.com/api/oauth2/authorize?client_id=714607226756661258&permissions=116800&scope=bot")
+
+    @tasks.loop(minutes=1)
+    async def sys_monitor(self):
+        tz = pytz.timezone("America/New_York")
+        self.sys_status["UPDATE"] = pytz.utc.localize(datetime.datetime.utcnow())
+        self.sys_status["CPU"] = round(psutil.cpu_percent())
+        self.sys_status["RAM"] = round(psutil.virtual_memory().percent)
+        self.sys_status["DISK"] = round(psutil.disk_usage("/").percent)
+        if self.platform == 'linux':  # platform specific feature
+            self.sys_status["TEMPF"] = psutil.sensors_temperatures()
+            self.sys_status["TEMPC"] = psutil.sensors_temperatures()
+        self.sys_status["BOOT"] = tz.localize(datetime.datetime.fromtimestamp(psutil.boot_time())).strftime("%Y-%m-%d%t%H:%M:%S %Z")
+        self.sys_status["IP"] = requests.get("https://api.ipify.org?format=json").json()['ip']
+
+
+def setup(bot):
+    bot.add_cog(Core(bot))
