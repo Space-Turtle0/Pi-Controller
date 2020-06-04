@@ -1,5 +1,6 @@
 from discord.ext import commands, tasks
-from tinydb import TinyDB, Query
+import core.common as common
+import core.embed as ebed
 import datetime
 import pytz
 import discord
@@ -10,19 +11,12 @@ import sys
 import os
 
 
-def rgb():
-    value = random.randint(0, 255)
-    return value
-
-
-def is_admin(ctx):
-    program_dir = os.path.realpath(os.path.dirname(sys.argv[0]))
-    with TinyDB(os.path.join(program_dir, "data.json"), indent=4) as data:
-        admins = data.table("admins")
-        query = Query()
-        test = admins.search(query.id == ctx.message.author.id)
-        if len(test) == 1:
-            return True
+async def is_admin(ctx):
+    program_dir = common.getbotdir()
+    datafile = os.path.join(program_dir, "data.json")
+    data = await common.loadjson(datafile)
+    if ctx.author.id in data['admins']:
+        return True
 
 
 class Core(commands.Cog):
@@ -31,7 +25,7 @@ class Core(commands.Cog):
         self.sys_status = {}
         self.sys_monitor.start()
         self.platform = sys.platform
-        self.data_path = os.path.realpath(os.path.dirname(sys.argv[0]))
+        self.data_path = common.getbotdir()
 
     @commands.group()
     async def admins(self, ctx):
@@ -40,34 +34,32 @@ class Core(commands.Cog):
 
     @admins.command()
     async def list(self, ctx):
-        with TinyDB(os.path.join(self.data_path, "data.json"), indent=4) as data:
-            admins = data.table("admins")
-            msg = "Bot admins:"
-            for admin in admins:
-                try:
-                    user = self.bot.get_user(admin['id'])
-                    msg += "\n{}".format(user.mention)
-                except commands.BadArgument:
-                    continue
-            await ctx.send(msg)
+        data = await common.loadjson("data.json")
+        msg = "Bot Admins:"
+        for admin in data['admins']:
+            try:
+                user = self.bot.get_user(admin['id'])
+                msg += "\n{}".format(user.mention)
+            except commands.BadArgument:
+                continue
+        await ctx.send(msg)
 
     @admins.command(pass_context=True)
     @commands.check(is_admin)
     async def add(self, ctx, user: discord.User):
-        with TinyDB(os.path.join(self.data_path, "data.json"), indent=4) as data:
-            admins = data.table("admins")
-            search = Query()
-            if len(admins.search(search.id == user.id)) == 0:
-                admins.insert({"id": user.id})
-                await ctx.send("{} is now a bot admin.".format(user.mention))
-            else:
-                await ctx.send("{} is already a bot admin.".format(user.mention))
+        data = await common.loadjson("data.json")
+        if user.id not in data['admins']:
+            data['admins'].append(user.id)
+            await common.dumpjson(data, "data.json")
+            await ctx.send("{} is now a bot admin.".format(user.mention))
+        else:
+            await ctx.send("{} is already a bot admin.".format(user.mention))
 
     @commands.command()
     async def status(self, ctx):
         embed = discord.Embed(title="System Status",
                               timestamp=self.sys_status["UPDATE"],
-                              color=discord.Color.from_rgb(rgb(), rgb(), rgb()), description="Updated every minute.")
+                              color=ebed.randomrgb(), description="Updated every minute.")
         embed.add_field(name="RAM", value="{}%".format(self.sys_status["RAM"]))
         embed.add_field(name="CPU", value="{}%".format(self.sys_status["CPU"]))
         embed.add_field(name="DISK", value="{}%".format(self.sys_status["DISK"]))

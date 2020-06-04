@@ -1,5 +1,6 @@
 from discord.ext import commands
 from cogs.core import is_admin
+import core.embed as ebed
 import aiofiles
 import json
 import discord
@@ -76,7 +77,7 @@ class Servers(commands.Cog):
     """Cog focused for controlling 3rd-Party Servers through JSON data."""
     def __init__(self, bot):
         self.bot = bot
-        self.server_data = load_servers("servers.json")
+        self.server_data = None
         self.current_server = None
         self.current_dir = None
         self.main_dir = os.getcwd()
@@ -95,6 +96,18 @@ class Servers(commands.Cog):
         await self.run_command(server_data, "setup")
         os.chdir(main_dir)
 
+    async def console_channel(self, channel_name):
+        print("Running console_channel")
+        stdout = asyncio.subprocess.PIPE
+        stdout, stderr = await self.current_server.communicate()
+        content = stdout.decode().strip()
+        for guild in self.bot.guilds():
+            print("Setting up console channel for guild {}")
+            channel = discord.utils.get(self.bot.get_all_channels(),
+                                        guild__name=guild.name,
+                                        name=channel_name)
+            await channel.send(content)
+
     async def run_command(self, server_data: dict, command: str):
         """Process the given command found in serverdata."""
         statustypes = {"playing": discord.ActivityType.playing,
@@ -104,6 +117,7 @@ class Servers(commands.Cog):
         cmd = server_data["commands"][command]
         i = 0
         m = len(cmd)
+        print("Running command: {}".format(command))
         for step in cmd:
             i += 1
             print("Running step {} of {}".format(i, m))
@@ -118,6 +132,11 @@ class Servers(commands.Cog):
                 if 'args' in step.keys():
                     step = await load_args(step)
                 self.current_server = await asyncio_subprocess(step['shell'])
+            elif 'channel' in step.keys():
+                print("Found channel key")
+                if step['channel']['function'] == 'console_channel':
+                    print("Found console_channel thing")
+                    await self.console_channel(step['channel']['name'])
 
     @commands.group()
     async def server(self, ctx):
@@ -140,20 +159,42 @@ class Servers(commands.Cog):
         else:
             await ctx.send("No server by '{}' found".format(server_name))
 
-    @server.command(pass_context=True)
+    @server.group(pass_context=True)
     @commands.check(is_admin)
     async def data(self, ctx):
+        if ctx.invoked_subcommand is None:
+            await ctx.send("Invalid command.")
+
+    @data.command(pass_context=True)
+    @commands.check(is_admin)
+    async def get(self, ctx):
         """Receive raw JSON serverdata from the loaded file."""
         await ctx.author.send(file=discord.File("servers.json"))
+
+    @data.command(pass_context=True)
+    @commands.check(is_admin)
+    async def refresh(self, ctx):
+        """Refresh data loaded by the bot."""
+        self.server_data = load_servers(self.bot.appdata['settings']['serverjson'])
+        await ctx.send("Data refreshed.")
 
     @server.command(pass_context=True)
     @commands.check(is_admin)
     async def list(self, ctx):
         """List all servers available to launch."""
-        msg = "Servers Loaded: "
+        embed = discord.Embed(title="Servers Listed",
+                              color=ebed.randomrgb())
+        count = 0
+        msg = ""
         for key in self.server_data:
-            msg += "\n{}".format(key)
-        await ctx.send(msg)
+            count += 1
+            msg += "\n**-** {}".format(key)
+        embed.add_field(name="{} loaded".format(count), value=msg, inline=False)
+        await ctx.send(embed=embed)
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        self.server_data = load_servers(self.bot.appdata['settings']['serverjson'])
 
 
 def setup(bot):
