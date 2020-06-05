@@ -1,8 +1,7 @@
-from discord.ext import commands
+from discord.ext import commands, tasks
 from cogs.core import is_admin
+import core.common as common
 import core.embed as ebed
-import aiofiles
-import json
 import discord
 import requests
 import asyncio
@@ -32,11 +31,6 @@ async def load_args(data: dict) -> dict:  # make recursive
     return newdict
 
 
-async def makefile(filename, data):
-    async with aiofiles.open(filename, mode="w+") as file:
-        await file.write(data)
-
-
 async def download_file(url, save_file):  # move to thread
     """Download the given server and initialize setup."""
     print("Running download_file")
@@ -62,15 +56,11 @@ async def makedir(dir_name: str) -> str:
 
 async def asyncio_subprocess(*args):
     """Runs a async compatible subprocess, returning the created process."""
-    process = await asyncio.create_subprocess_shell(*args, stdout=asyncio.subprocess.PIPE)
+    process = await asyncio.create_subprocess_shell(*args,
+                                                    stdout=asyncio.subprocess.PIPE,
+                                                    stdin=asyncio.subprocess.PIPE,
+                                                    stderr=asyncio.subprocess.PIPE)
     return process
-
-
-def load_servers(serverfile) -> dict:
-    with open(serverfile) as file:
-        data = json.load(file)
-    print("Loaded server data file.")
-    return data
 
 
 class Servers(commands.Cog):
@@ -78,7 +68,9 @@ class Servers(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.server_data = None
-        self.current_server = None
+        self.current_console = None
+        self.current_process = None
+        self.current_server = None  # TODO: Change JSON format, remove the server identifier key, use filenames instead.
         self.current_dir = None
         self.main_dir = os.getcwd()
 
@@ -96,17 +88,33 @@ class Servers(commands.Cog):
         await self.run_command(server_data, "setup")
         os.chdir(main_dir)
 
-    async def console_channel(self, channel_name):
-        print("Running console_channel")
-        stdout = asyncio.subprocess.PIPE
-        stdout, stderr = await self.current_server.communicate()
-        content = stdout.decode().strip()
-        for guild in self.bot.guilds():
-            print("Setting up console channel for guild {}")
-            channel = discord.utils.get(self.bot.get_all_channels(),
-                                        guild__name=guild.name,
-                                        name=channel_name)
-            await channel.send(content)
+    @tasks.loop(seconds=1)
+    async def console_read(self, channel_id):
+        print("Running console_send task")
+        channel = discord.utils.get(self.bot.get_all_channels(), id=channel_id)
+        if self.current_process is not None:
+            print("Server process found.")
+            if self.current_process.stdout.at_eof() is not True:
+                data = await self.current_process.stdout.readline()
+                reply = data.decode().strip()
+                await channel.send(reply)
+                print("Sent: {}".format(reply))
+            else:
+                print("Nothing to read.")
+        else:
+            print("Stopping console update loop, no server running.")
+            self.console_read.stop()
+
+    async def console_write(self, data):
+        print("cw: {}".format(self.current_process.stdin.is_closing()))
+        if self.current_process is not None:
+            data += "\n"
+            print("Running console_write")
+            data = data.encode()
+            print("Writing '{}' to console".format(data.decode()))
+            self.current_process.stdin.write(data)
+            await self.current_process.stdin.drain()
+            print("Finished console_write")
 
     async def run_command(self, server_data: dict, command: str):
         """Process the given command found in serverdata."""
@@ -123,7 +131,7 @@ class Servers(commands.Cog):
             print("Running step {} of {}".format(i, m))
             if 'file' in step.keys():
                 print("Running file creation for setup step: {}".format(step))
-                await makefile(step['file']['name'], step['file']['data'])
+                await common.makefile(step['file']['name'], step['file']['data'])
             elif 'presence' in step.keys():
                 activity = discord.Activity(name=step['presence']['status'],
                                             type=statustypes[step['presence']['type']])
@@ -131,14 +139,18 @@ class Servers(commands.Cog):
             elif 'shell' in step.keys():
                 if 'args' in step.keys():
                     step = await load_args(step)
-                self.current_server = await asyncio_subprocess(step['shell'])
+                self.current_process = await asyncio_subprocess(step['shell'])
             elif 'channel' in step.keys():
-                print("Found channel key")
-                if step['channel']['function'] == 'console_channel':
-                    print("Found console_channel thing")
-                    await self.console_channel(step['channel']['name'])
+                print("Found 'channel' key")
+                if step['channel']['type'] == 'console':
+                    print("Found 'console' key")
+                    self.current_console = step['channel']['id']
+                    self.console_read.start(step['channel']['id'])
+            elif 'console' in step.keys():
+                print("Sending command '{}' to server console.".format(step['console']))
+                await self.console_write(step['console'])
 
-    @commands.group()
+    @commands.group(aliases=["servers"])
     async def server(self, ctx):
         if ctx.invoked_subcommand is None:
             await ctx.send("Invalid command.")
@@ -147,10 +159,13 @@ class Servers(commands.Cog):
     @commands.check(is_admin)
     async def start(self, ctx, server_name: str):
         """Start a server"""
-        if server_name in self.server_data.keys():
+        if os.path.exists(os.path.join(common.getbotdir(), "data", "servers", "{}.json".format(server_name))):
+            self.server_data = await common.loadjson("data/servers/{}.json".format(server_name))
+            print("Loaded '{}' server data.".format(server_name))
             if await dircheck(self.server_data[server_name]['directories']['main']):
-                os.chdir(server_name)
+                os.chdir(self.server_data[server_name]['directories']['main'])
                 await self.run_command(self.server_data[server_name], "start")
+                self.current_server = server_name
                 await ctx.send("Starting server {}".format(server_name))
             else:  # not downloaded yet
                 await ctx.send("Directory for '{}' currently does not exist. Starting download.".format(server_name))
@@ -158,6 +173,12 @@ class Servers(commands.Cog):
                 await ctx.send("Download finished, run the command again to start the server.")
         else:
             await ctx.send("No server by '{}' found".format(server_name))
+
+    @server.command(pass_context=True)
+    @commands.check(is_admin)
+    async def stop(self, ctx):
+        await self.run_command(self.server_data[self.current_server], "stop")
+        await ctx.send("Stop command run for server '{}'".format(self.current_server))
 
     @server.group(pass_context=True)
     @commands.check(is_admin)
@@ -167,34 +188,36 @@ class Servers(commands.Cog):
 
     @data.command(pass_context=True)
     @commands.check(is_admin)
-    async def get(self, ctx):
+    async def get(self, ctx, file):
         """Receive raw JSON serverdata from the loaded file."""
-        await ctx.author.send(file=discord.File("servers.json"))
-
-    @data.command(pass_context=True)
-    @commands.check(is_admin)
-    async def refresh(self, ctx):
-        """Refresh data loaded by the bot."""
-        self.server_data = load_servers(self.bot.appdata['settings']['serverjson'])
-        await ctx.send("Data refreshed.")
+        await ctx.author.send(file=discord.File(os.path.join(common.getbotdir(),
+                                                             "data",
+                                                             "servers",
+                                                             "{}.json".format(file))))
 
     @server.command(pass_context=True)
     @commands.check(is_admin)
     async def list(self, ctx):
         """List all servers available to launch."""
+        color = ebed.randomrgb()
         embed = discord.Embed(title="Servers Listed",
-                              color=ebed.randomrgb())
+                              color=color)
         count = 0
         msg = ""
-        for key in self.server_data:
+        for file in os.listdir(os.path.join(common.getbotdir(), "data", "servers")):
             count += 1
-            msg += "\n**-** {}".format(key)
+            msg += "\n**-** {}".format(os.path.splitext(file)[0])
         embed.add_field(name="{} loaded".format(count), value=msg, inline=False)
+        embed.set_footer(text="#{0:02x}{1:02x}{2:02x}".format(color.r, color.g, color.b))
         await ctx.send(embed=embed)
 
     @commands.Cog.listener()
-    async def on_ready(self):
-        self.server_data = load_servers(self.bot.appdata['settings']['serverjson'])
+    async def on_message(self, msg):
+        if msg.content is None:
+            print("NONE")
+        if await is_admin(msg) and self.current_process is not None:
+            if msg.channel.id == self.current_console:
+                await self.console_write(msg.content)
 
 
 def setup(bot):

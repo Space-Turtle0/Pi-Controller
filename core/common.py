@@ -18,9 +18,11 @@ async def makefile(filename: str, data: any):
         await file.write(data)
 
 
-async def loadjson(filename: str):
+async def loadjson(filename: str) -> dict:
     """Load json file, return the data. Non-Blocking, requires await."""
-    async with aiofiles.open(filename, "r") as file:
+    root = getbotdir()
+    path = os.path.join(root, filename)
+    async with aiofiles.open(path, "r") as file:
         content = await file.read()
     data = json.loads(content)
     return data

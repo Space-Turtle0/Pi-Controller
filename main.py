@@ -21,31 +21,23 @@ if __name__ == '__main__':
 
 
 @bot.event
-async def on_connect():
-    root = pathlib.Path(common.getbotdir())
-    if root.joinpath("data.json").exists():
-        print("Loading data.json")
-    else:
-        await common.makefile("data.json", "{}")
-        print("No 'data.json' file found, creating.")
-    bot.appdata = await common.loadjson("data.json")
-    if 'admins' not in bot.appdata:
-        bot.appdata['admins'] = []
-    if 'settings' not in bot.appdata:
-        bot.appdata['settings'] = {}
-    if 'serverjson' not in bot.appdata['settings']:
-        bot.appdata['settings']['serverjson'] = "servers.json"
-
-
-@bot.event
 async def on_ready():
+    root = pathlib.Path(common.getbotdir())
     print("Building App Info")
     if not hasattr(bot, 'appinfo'):
         bot.appinfo = await bot.application_info()
     owner = bot.appinfo.owner.id
-    if owner not in bot.appdata['admins']:
+    if root.joinpath("data/data.json").exists():
+        print("Preloading data.json")  # TODO: Add server moderators, people who can control specific server.
+    else:
+        await common.makefile("data/data.json", "{}")
+        print("No 'data.json' file found, creating.")
+    data = await common.loadjson(root.joinpath("data/data.json"))
+    if 'admins' not in data:
+        data['admins'] = []
+    if owner not in data['admins']:
         print("Owner not found in admin list, adding.")
-        bot.appdata['admins'].append(owner)
-    await common.dumpjson(bot.appdata, "data.json")
+        data['admins'].append(owner)
+    await common.dumpjson(data, "data/data.json")
 
 bot.run(os.environ['PICONTROLLER'], reconnect=True)

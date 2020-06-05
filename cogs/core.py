@@ -13,7 +13,7 @@ import os
 
 async def is_admin(ctx):
     program_dir = common.getbotdir()
-    datafile = os.path.join(program_dir, "data.json")
+    datafile = os.path.join(program_dir, "data/data.json")
     data = await common.loadjson(datafile)
     if ctx.author.id in data['admins']:
         return True
@@ -34,32 +34,44 @@ class Core(commands.Cog):
 
     @admins.command()
     async def list(self, ctx):
-        data = await common.loadjson("data.json")
-        msg = "Bot Admins:"
+        data = await common.loadjson("data/data.json")
+        count = 0
+        msg = ""
         for admin in data['admins']:
             try:
-                user = self.bot.get_user(admin['id'])
+                user = self.bot.get_user(admin)
                 msg += "\n{}".format(user.mention)
+                count += 1
             except commands.BadArgument:
                 continue
-        await ctx.send(msg)
+        if count == 1:
+            admin_count = "1 admin"
+        else:
+            admin_count = "{} admins".format(count)
+        color = ebed.randomrgb()
+        embed = discord.Embed(title="Bot Admins",
+                              color=color)
+        embed.add_field(name=admin_count, value=msg)
+        embed.set_footer(text="#{0:02x}{1:02x}{2:02x}".format(color.r, color.g, color.b))
+        await ctx.send(embed=embed)
 
     @admins.command(pass_context=True)
     @commands.check(is_admin)
     async def add(self, ctx, user: discord.User):
-        data = await common.loadjson("data.json")
+        data = await common.loadjson("data/data.json")
         if user.id not in data['admins']:
             data['admins'].append(user.id)
-            await common.dumpjson(data, "data.json")
+            await common.dumpjson(data, "data/data.json")
             await ctx.send("{} is now a bot admin.".format(user.mention))
         else:
             await ctx.send("{} is already a bot admin.".format(user.mention))
 
     @commands.command()
     async def status(self, ctx):
+        color = ebed.randomrgb()
         embed = discord.Embed(title="System Status",
                               timestamp=self.sys_status["UPDATE"],
-                              color=ebed.randomrgb(), description="Updated every minute.")
+                              color=color, description="Updated every minute.")
         embed.add_field(name="RAM", value="{}%".format(self.sys_status["RAM"]))
         embed.add_field(name="CPU", value="{}%".format(self.sys_status["CPU"]))
         embed.add_field(name="DISK", value="{}%".format(self.sys_status["DISK"]))
@@ -68,6 +80,7 @@ class Core(commands.Cog):
                             value="{}°C/{}°F".format(self.sys_status["TEMPC"], self.sys_status["TEMPF"]))
         embed.add_field(name="Boot Time", value=self.sys_status["BOOT"], inline=False)
         embed.add_field(name="IP Address", value=self.sys_status["IP"], inline=False)
+        embed.set_footer(text="#{0:02x}{1:02x}{2:02x}".format(color.r, color.g, color.b))
         await ctx.send(embed=embed)
 
     @add.error
