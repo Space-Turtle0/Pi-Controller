@@ -13,7 +13,7 @@ async def dircheck(directory) -> bool:
     return os.path.exists(directory)
 
 
-async def load_args(data: dict) -> dict:  # make recursive
+async def load_args(data: dict) -> dict:  # TODO: make recursive, possibly load all args for file on load.
     """Load args for the given dict. Replaces placeholders with their actual values"""
     print("Loading Args for dict: {}".format(str(data)))
     newdict = {}
@@ -73,6 +73,7 @@ class Servers(commands.Cog):
         self.current_server = None  # TODO: Change JSON format, remove the server identifier key, use filenames instead.
         self.current_dir = None
         self.main_dir = os.getcwd()
+        self.server_cleanup.start()
 
     async def download(self, server_data: dict):
         """Initiates download functions for the given server."""
@@ -89,8 +90,18 @@ class Servers(commands.Cog):
         os.chdir(main_dir)
 
     @tasks.loop(seconds=1)
+    async def server_cleanup(self):
+        if self.current_process is not None:
+            if self.current_process.returncode is not None and hasattr(self.console_read, "finished"):
+                self.current_process = None
+                self.current_server = None
+                self.current_console = None
+                await self.bot.change_presence(activity=None)
+                print("The running server has been terminated, resetting values.")
+
+    @tasks.loop(seconds=1)
     async def console_read(self, channel_id):
-        print("Running console_send task")
+        print("Running console_read task")
         channel = discord.utils.get(self.bot.get_all_channels(), id=channel_id)
         if self.current_process is not None:
             print("Server process found.")
@@ -101,8 +112,9 @@ class Servers(commands.Cog):
                 print("Sent: {}".format(reply))
             else:
                 print("Nothing to read.")
+                self.console_read.finished = True  # keeps the server_cleanup from running until all messages are sent.
         else:
-            print("Stopping console update loop, no server running.")
+            print("Stopping console_read task, no server running.")
             self.console_read.stop()
 
     async def console_write(self, data):
@@ -133,8 +145,11 @@ class Servers(commands.Cog):
                 print("Running file creation for setup step: {}".format(step))
                 await common.makefile(step['file']['name'], step['file']['data'])
             elif 'presence' in step.keys():
-                activity = discord.Activity(name=step['presence']['status'],
-                                            type=statustypes[step['presence']['type']])
+                if step['presence']['type'] is not None:
+                    activity = discord.Activity(name=step['presence']['status'],
+                                                type=statustypes[step['presence']['type']])
+                else:
+                    activity = None
                 await self.bot.change_presence(activity=activity)
             elif 'shell' in step.keys():
                 if 'args' in step.keys():
@@ -166,7 +181,7 @@ class Servers(commands.Cog):
                 os.chdir(self.server_data[server_name]['directories']['main'])
                 await self.run_command(self.server_data[server_name], "start")
                 self.current_server = server_name
-                await ctx.send("Starting server {}".format(server_name))
+                await ctx.send("Starting server '{}'".format(server_name))
             else:  # not downloaded yet
                 await ctx.send("Directory for '{}' currently does not exist. Starting download.".format(server_name))
                 await self.download(self.server_data[server_name])
@@ -178,7 +193,7 @@ class Servers(commands.Cog):
     @commands.check(is_admin)
     async def stop(self, ctx):
         await self.run_command(self.server_data[self.current_server], "stop")
-        await ctx.send("Stop command run for server '{}'".format(self.current_server))
+        await ctx.send("Stopping server '{}'".format(self.current_server))
 
     @server.group(pass_context=True)
     @commands.check(is_admin)

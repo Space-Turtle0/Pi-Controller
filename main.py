@@ -8,10 +8,6 @@ import core.common as common
 # Logging Controller
 logging.basicConfig(level=logging.INFO)
 
-# Update Controller
-update = ghau.Update(version="v0.0.1", repo="InValidFire/Pi-Controller", reboot=ghau.python("main.py"))
-update.update()
-
 # Discord Bot Controller
 bot = commands.Bot(command_prefix="pi.")
 cogs = ['cogs.core', 'cogs.servers']
@@ -30,14 +26,24 @@ async def on_ready():
     if root.joinpath("data/data.json").exists():
         print("Preloading data.json")  # TODO: Add server moderators, people who can control specific server.
     else:
-        await common.makefile("data/data.json", "{}")
         print("No 'data.json' file found, creating.")
+        await common.makefile("data/data.json", "{}")
     data = await common.loadjson(root.joinpath("data/data.json"))
     if 'admins' not in data:
         data['admins'] = []
     if owner not in data['admins']:
         print("Owner not found in admin list, adding.")
         data['admins'].append(owner)
+    if 'settings' not in data:
+        data['settings'] = {}
+    if 'do_updates' not in data['settings']:
+        data['settings']['do_updates'] = True
     await common.dumpjson(data, "data/data.json")
+    if data['settings']['do_updates'] is True:
+        print("Running update check.")
+        update = ghau.Update(version="v0.0.1", repo="InValidFire/Pi-Controller", reboot=ghau.python("main.py"))
+        update.update()
+    else:
+        print("Updates are disabled.")
 
 bot.run(os.environ['PICONTROLLER'], reconnect=True)
