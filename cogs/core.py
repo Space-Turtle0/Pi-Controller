@@ -52,7 +52,7 @@ class Core(commands.Cog):
         embed = discord.Embed(title="Bot Admins",
                               color=color)
         embed.add_field(name=admin_count, value=msg)
-        embed.set_footer(text="#{0:02x}{1:02x}{2:02x}".format(color.r, color.g, color.b))
+        embed.set_footer(text=ebed.rgb_to_hex(color.to_rgb()))
         await ctx.send(embed=embed)
 
     @admins.command(pass_context=True)
@@ -80,7 +80,7 @@ class Core(commands.Cog):
                             value="{}°C/{}°F".format(self.sys_status["TEMPC"], self.sys_status["TEMPF"]))
         embed.add_field(name="Boot Time", value=self.sys_status["BOOT"], inline=False)
         embed.add_field(name="IP Address", value=self.sys_status["IP"], inline=False)
-        embed.set_footer(text="#{0:02x}{1:02x}{2:02x}".format(color.r, color.g, color.b))
+        embed.set_footer(text=ebed.rgb_to_hex(color.to_rgb()))
         await ctx.send(embed=embed)
 
     @add.error

@@ -2,6 +2,7 @@ from discord.ext import commands, tasks
 from cogs.core import is_admin
 import core.common as common
 import core.embed as ebed
+import random
 import discord
 import requests
 import asyncio
@@ -13,7 +14,7 @@ async def dircheck(directory) -> bool:
     return os.path.exists(directory)
 
 
-async def load_args(data: dict) -> dict:  # TODO: make recursive, possibly load all args for file on load.
+async def load_args(data: dict) -> dict:
     """Load args for the given dict. Replaces placeholders with their actual values"""
     print("Loading Args for dict: {}".format(str(data)))
     newdict = {}
@@ -29,6 +30,23 @@ async def load_args(data: dict) -> dict:  # TODO: make recursive, possibly load 
         newdict[key] = item
     print(newdict)
     return newdict
+
+
+async def load_file_args(data: dict) -> dict:
+    """Recursively load arguments from a dictionary."""
+    for key in data:
+        if key == "args":
+            print("Found args key for data: {}".format(key))
+            data = await load_args(data)
+        elif isinstance(data[key], dict):
+            print("Found dict for key: {}".format(key))
+            data[key] = await load_file_args(data[key])
+        elif isinstance(data[key], list):
+            print("Found list for key: {}".format(key))
+            for item in data[key]:
+                if isinstance(item, dict):
+                    data[key][data[key].index(item)] = await load_file_args(item)
+    return data
 
 
 async def download_file(url, save_file):  # move to thread
@@ -63,6 +81,27 @@ async def asyncio_subprocess(*args):
     return process
 
 
+async def load_embed(meta: dict) -> discord.Embed:
+    """Common embed builder used to create embeds used with server messages."""
+    if "embed_color" in meta:  # load color
+        if isinstance(meta['embed_color'], str):
+            embed = discord.Embed(color=ebed.hex_to_rgb(meta['embed_color']))
+        elif isinstance(meta['embed_color'], list):  # TODO: Add error handling for JSON format.
+            color = random.choice(meta['embed_color'])
+            embed = discord.Embed(color=ebed.hex_to_rgb(color))
+        else:
+            embed = discord.Embed(color=ebed.randomrgb())
+    else:
+        embed = discord.Embed(color=ebed.randomrgb())
+    if "desc" in meta and "icon" in meta:  # load footer
+        embed.set_footer(icon_url=meta['icon'], text="{name} - {desc}".format(name=meta['name'], desc=meta['desc']))
+    elif "desc" in meta:
+        embed.set_footer(text="{name} - {desc}".format(name=meta['name'], desc=meta['desc']))
+    elif "icon" in meta:
+        embed.set_footer(icon_url=meta['icon'], text=meta['name'])
+    return embed
+
+
 class Servers(commands.Cog):
     """Cog focused for controlling 3rd-Party Servers through JSON data."""
     def __init__(self, bot):
@@ -70,7 +109,6 @@ class Servers(commands.Cog):
         self.server_data = None
         self.current_console = None
         self.current_process = None
-        self.current_server = None  # TODO: Change JSON format, remove the server identifier key, use filenames instead.
         self.current_dir = None
         self.main_dir = os.getcwd()
         self.server_cleanup.start()
@@ -78,34 +116,34 @@ class Servers(commands.Cog):
     async def download(self, server_data: dict):
         """Initiates download functions for the given server."""
         print("Running download")
-        if 'args' in server_data['download'].keys():
-            server_data['download'] = await load_args(server_data['download'])
         main_dir = os.getcwd()
         server_dir = await makedir(server_data['directories']['main'])
         os.chdir(server_dir)
         file_dir = server_data['download']['file']
         link = server_data['download']['link']
         await download_file(link, file_dir)
-        await self.run_command(server_data, "setup")
+        await self.run_command("setup")
         os.chdir(main_dir)
 
     @tasks.loop(seconds=1)
     async def server_cleanup(self):
+        """Resets server-specific values after a server has terminated for any reason."""
         if self.current_process is not None:
             if self.current_process.returncode is not None and hasattr(self.console_read, "finished"):
+                self.server_data = None
                 self.current_process = None
-                self.current_server = None
                 self.current_console = None
                 await self.bot.change_presence(activity=None)
+                os.chdir(common.getbotdir())
                 print("The running server has been terminated, resetting values.")
 
     @tasks.loop(seconds=1)
     async def console_read(self, channel_id):
-        print("Running console_read task")
+        """Sends data from process output to the specified discord channel."""
         channel = discord.utils.get(self.bot.get_all_channels(), id=channel_id)
         if self.current_process is not None:
-            print("Server process found.")
             if self.current_process.stdout.at_eof() is not True:
+                print("Waiting for console output...")
                 data = await self.current_process.stdout.readline()
                 reply = data.decode().strip()
                 await channel.send(reply)
@@ -118,32 +156,33 @@ class Servers(commands.Cog):
             self.console_read.stop()
 
     async def console_write(self, data):
+        """Writes the given data to the process stdin."""
         print("cw: {}".format(self.current_process.stdin.is_closing()))
         if self.current_process is not None:
             data += "\n"
-            print("Running console_write")
+            print("Writing '{}' to console".format(data))
             data = data.encode()
-            print("Writing '{}' to console".format(data.decode()))
             self.current_process.stdin.write(data)
             await self.current_process.stdin.drain()
             print("Finished console_write")
 
-    async def run_command(self, server_data: dict, command: str):
+    async def run_command(self, command: str):  # TODO: Move each case into its' own function for handling.
         """Process the given command found in serverdata."""
         statustypes = {"playing": discord.ActivityType.playing,
                        "watching": discord.ActivityType.watching,
                        "streaming": discord.ActivityType.streaming,
                        "listening": discord.ActivityType.listening}
-        cmd = server_data["commands"][command]
+        cmd = self.server_data["commands"][command]
         i = 0
         m = len(cmd)
         print("Running command: {}".format(command))
         for step in cmd:
-            i += 1
+            i += 1  # step counter.
             print("Running step {} of {}".format(i, m))
             if 'file' in step.keys():
-                print("Running file creation for setup step: {}".format(step))
-                await common.makefile(step['file']['name'], step['file']['data'])
+                print("Running file function for step: {}".format(step))
+                if 'create' in step['file'].keys():
+                    await common.makefile(step['file']['create']['name'], step['file']['create']['data'])
             elif 'presence' in step.keys():
                 if step['presence']['type'] is not None:
                     activity = discord.Activity(name=step['presence']['status'],
@@ -152,8 +191,6 @@ class Servers(commands.Cog):
                     activity = None
                 await self.bot.change_presence(activity=activity)
             elif 'shell' in step.keys():
-                if 'args' in step.keys():
-                    step = await load_args(step)
                 self.current_process = await asyncio_subprocess(step['shell'])
             elif 'channel' in step.keys():
                 print("Found 'channel' key")
@@ -164,6 +201,9 @@ class Servers(commands.Cog):
             elif 'console' in step.keys():
                 print("Sending command '{}' to server console.".format(step['console']))
                 await self.console_write(step['console'])
+            elif 'command' in step.keys():
+                print("Running command {}.".format(step['command']))
+                await self.run_command(step['command'])
 
     @commands.group(aliases=["servers"])
     async def server(self, ctx):
@@ -175,25 +215,52 @@ class Servers(commands.Cog):
     async def start(self, ctx, server_name: str):
         """Start a server"""
         if os.path.exists(os.path.join(common.getbotdir(), "data", "servers", "{}.json".format(server_name))):
-            self.server_data = await common.loadjson("data/servers/{}.json".format(server_name))
+            self.server_data = await load_file_args(await common.loadjson("data/servers/{}.json".format(server_name)))
             print("Loaded '{}' server data.".format(server_name))
-            if await dircheck(self.server_data[server_name]['directories']['main']):
-                os.chdir(self.server_data[server_name]['directories']['main'])
-                await self.run_command(self.server_data[server_name], "start")
-                self.current_server = server_name
-                await ctx.send("Starting server '{}'".format(server_name))
+            if await dircheck(self.server_data['meta']['directories']['main']):
+                os.chdir(self.server_data['meta']['directories']['main'])
+                await self.run_command("start")
+                embed = await load_embed(self.server_data['meta'])
+                embed.description = "Starting server."
+                await ctx.send(embed=embed)
             else:  # not downloaded yet
-                await ctx.send("Directory for '{}' currently does not exist. Starting download.".format(server_name))
+                embed = await load_embed(self.server_data['meta'])
+                embed.description = "Server directory not found, starting download."
+                await ctx.send(embed=embed)
+                embed = await load_embed(self.server_data['meta'])
+                embed.description = "Download finished, run again to start the server."
                 await self.download(self.server_data[server_name])
-                await ctx.send("Download finished, run the command again to start the server.")
+                await ctx.send(embed=embed)
         else:
             await ctx.send("No server by '{}' found".format(server_name))
 
     @server.command(pass_context=True)
     @commands.check(is_admin)
     async def stop(self, ctx):
-        await self.run_command(self.server_data[self.current_server], "stop")
-        await ctx.send("Stopping server '{}'".format(self.current_server))
+        embed = await load_embed(self.server_data['meta'])
+        embed.description = "Stopping server."
+        await ctx.send(embed=embed)
+        await self.run_command("stop")
+
+    @server.command(pass_context=True)
+    @commands.check(is_admin)
+    async def run(self, ctx, command):
+        if self.server_data is None:
+            embed = discord.Embed(color=ebed.randomrgb())
+            embed.description = "No server running."
+            await ctx.send(embed=embed)
+        else:
+            embed = await load_embed(self.server_data['meta'])
+            if command == "start" or command == "setup":
+                embed.description = "System command. Unable to run through this method."
+                await ctx.send(embed=embed)
+            elif command in self.server_data['commands']:
+                embed.description = "Running command: {}".format(command)
+                await ctx.send(embed=embed)
+                await self.run_command(command)
+            else:
+                embed.description = "No command '{command}' found.".format(command=command)
+                await ctx.send(embed=embed)
 
     @server.group(pass_context=True)
     @commands.check(is_admin)
@@ -222,8 +289,8 @@ class Servers(commands.Cog):
         for file in os.listdir(os.path.join(common.getbotdir(), "data", "servers")):
             count += 1
             msg += "\n**-** {}".format(os.path.splitext(file)[0])
-        embed.add_field(name="{} loaded".format(count), value=msg, inline=False)
-        embed.set_footer(text="#{0:02x}{1:02x}{2:02x}".format(color.r, color.g, color.b))
+        embed.add_field(name="{} available".format(count), value=msg, inline=False)
+        embed.set_footer(text=ebed.rgb_to_hex(color.to_rgb()))
         await ctx.send(embed=embed)
 
     @commands.Cog.listener()
