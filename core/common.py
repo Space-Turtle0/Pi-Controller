@@ -4,10 +4,19 @@ import sys
 import json
 
 
+botdir = None
+
+
+def setbotdir():
+    global botdir
+    botdir = os.path.dirname(os.path.realpath(sys.argv[0]))
+    return botdir
+
+
 def getbotdir() -> str:
     """Returns the root directory of the bot as a string."""
-    path = os.path.realpath(os.path.dirname(sys.argv[0]))
-    return path
+    global botdir
+    return botdir
 
 
 async def makefile(filename: str, data: any):

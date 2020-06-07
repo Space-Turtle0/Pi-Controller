@@ -18,7 +18,7 @@ if __name__ == '__main__':
 
 @bot.event
 async def on_ready():
-    root = pathlib.Path(common.getbotdir())
+    root = pathlib.Path(common.setbotdir())
     print("Building App Info")
     if not hasattr(bot, 'appinfo'):
         bot.appinfo = await bot.application_info()

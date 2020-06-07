@@ -6,7 +6,7 @@ import pytz
 import discord
 import requests
 import psutil
-import random
+import subprocess
 import sys
 import os
 
@@ -65,6 +65,34 @@ class Core(commands.Cog):
             await ctx.send("{} is now a bot admin.".format(user.mention))
         else:
             await ctx.send("{} is already a bot admin.".format(user.mention))
+
+    @commands.command(pass_context=True)
+    @commands.check(is_admin)
+    async def restart(self, ctx):
+        """Run the given command and close the python interpreter.
+            If no command is given, it will just close."""
+        print("Running restart")
+        embed = discord.Embed(color=ebed.randomrgb())
+        embed.description = "Be right back!"
+        await ctx.send(embed=embed)
+        os.execl(sys.executable, sys.executable, *sys.argv)
+
+    @commands.command(pass_context=True)
+    @commands.check(is_admin)
+    async def shutdown(self, ctx):
+        embed = discord.Embed(color=ebed.randomrgb())
+        embed.description = "Goodbye!"
+        await ctx.send(embed=embed)
+        sys.exit()
+
+    @commands.command(pass_context=True)
+    async def getbotdir(self, ctx):
+        embed = discord.Embed(color=ebed.randomrgb())
+        embed.add_field(name="Bot Dir", value=common.getbotdir())
+        embed.add_field(name="Arg 0", value="name: {}".format(str(sys.argv[0])))
+        embed.add_field(name="Folder", value="name: {}".format(str(os.path.dirname(sys.argv[0]))))
+        embed.add_field(name="Full Path", value=os.path.realpath(os.path.dirname(sys.argv[0])))
+        await ctx.send(embed=embed)
 
     @commands.command()
     async def status(self, ctx):

@@ -2,6 +2,8 @@ from discord.ext import commands, tasks
 from cogs.core import is_admin
 import core.common as common
 import core.embed as ebed
+import shlex
+import zipfile
 import random
 import discord
 import requests
@@ -72,12 +74,12 @@ async def makedir(dir_name: str) -> str:
     return dir_name
 
 
-async def asyncio_subprocess(*args):
+async def asyncio_subprocess(program):
     """Runs a async compatible subprocess, returning the created process."""
-    process = await asyncio.create_subprocess_shell(*args,
-                                                    stdout=asyncio.subprocess.PIPE,
-                                                    stdin=asyncio.subprocess.PIPE,
-                                                    stderr=asyncio.subprocess.PIPE)
+    process = await asyncio.create_subprocess_exec(*program,
+                                                   stdout=asyncio.subprocess.PIPE,
+                                                   stdin=asyncio.subprocess.PIPE,
+                                                   stderr=asyncio.subprocess.PIPE)
     return process
 
 
@@ -117,7 +119,7 @@ class Servers(commands.Cog):
         """Initiates download functions for the given server."""
         print("Running download")
         main_dir = os.getcwd()
-        server_dir = await makedir(server_data['directories']['main'])
+        server_dir = await makedir(server_data['meta']['directories']['main'])
         os.chdir(server_dir)
         file_dir = server_data['download']['file']
         link = server_data['download']['link']
@@ -144,7 +146,7 @@ class Servers(commands.Cog):
         if self.current_process is not None:
             if self.current_process.stdout.at_eof() is not True:
                 print("Waiting for console output...")
-                data = await self.current_process.stdout.readline()
+                data = await asyncio.wait_for(self.current_process.stdout.readline(), 3)
                 reply = data.decode().strip()
                 await channel.send(reply)
                 print("Sent: {}".format(reply))
@@ -157,14 +159,21 @@ class Servers(commands.Cog):
 
     async def console_write(self, data):
         """Writes the given data to the process stdin."""
-        print("cw: {}".format(self.current_process.stdin.is_closing()))
         if self.current_process is not None:
-            data += "\n"
             print("Writing '{}' to console".format(data))
+            data += "\n"
             data = data.encode()
             self.current_process.stdin.write(data)
             await self.current_process.stdin.drain()
             print("Finished console_write")
+
+    def extract(self, path, dest):
+        with zipfile.ZipFile(path, 'r') as file:
+            file.extractall(os.path.join(common.getbotdir(), self.server_data['meta']['directories'][dest]))
+
+    async def asyncio_extract(self, path, dest):
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, self.extract, path, dest)
 
     async def run_command(self, command: str):  # TODO: Move each case into its' own function for handling.
         """Process the given command found in serverdata."""
@@ -182,7 +191,11 @@ class Servers(commands.Cog):
             if 'file' in step.keys():
                 print("Running file function for step: {}".format(step))
                 if 'create' in step['file'].keys():
-                    await common.makefile(step['file']['create']['name'], step['file']['create']['data'])
+                    await common.makefile(os.path.join(self.server_data['meta']['directories']['main'],
+                                                       step['file']['create']['name']),
+                                          step['file']['create']['data'])
+                if 'extract' in step['file'].keys():
+                    await self.asyncio_extract(step['file']['extract']['name'], step['file']['extract']['folder'])
             elif 'presence' in step.keys():
                 if step['presence']['type'] is not None:
                     activity = discord.Activity(name=step['presence']['status'],
@@ -191,7 +204,7 @@ class Servers(commands.Cog):
                     activity = None
                 await self.bot.change_presence(activity=activity)
             elif 'shell' in step.keys():
-                self.current_process = await asyncio_subprocess(step['shell'])
+                self.current_process = await asyncio_subprocess(shlex.split(step['shell']))
             elif 'channel' in step.keys():
                 print("Found 'channel' key")
                 if step['channel']['type'] == 'console':
@@ -204,6 +217,15 @@ class Servers(commands.Cog):
             elif 'command' in step.keys():
                 print("Running command {}.".format(step['command']))
                 await self.run_command(step['command'])
+            elif 'directory' in step.keys():
+                print("Changing directory to: {}".format(step['directory']))
+                os.chdir(os.path.join(common.getbotdir(), self.server_data['meta']['directories']['main'],
+                                      self.server_data['meta']['directories'][step['directory']]))
+            elif 'process' in step.keys():
+                if step['process'] == 'kill':
+                    print("Killing current process.")
+                    self.current_process.kill()
+                    await self.current_process.communicate()
 
     @commands.group(aliases=["servers"])
     async def server(self, ctx):
@@ -218,7 +240,7 @@ class Servers(commands.Cog):
             self.server_data = await load_file_args(await common.loadjson("data/servers/{}.json".format(server_name)))
             print("Loaded '{}' server data.".format(server_name))
             if await dircheck(self.server_data['meta']['directories']['main']):
-                os.chdir(self.server_data['meta']['directories']['main'])
+                os.chdir(self.server_data['meta']['directories']['main'])  # so shell commands run in their directories
                 await self.run_command("start")
                 embed = await load_embed(self.server_data['meta'])
                 embed.description = "Starting server."
@@ -229,7 +251,7 @@ class Servers(commands.Cog):
                 await ctx.send(embed=embed)
                 embed = await load_embed(self.server_data['meta'])
                 embed.description = "Download finished, run again to start the server."
-                await self.download(self.server_data[server_name])
+                await self.download(self.server_data)
                 await ctx.send(embed=embed)
         else:
             await ctx.send("No server by '{}' found".format(server_name))
@@ -295,9 +317,7 @@ class Servers(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, msg):
-        if msg.content is None:
-            print("NONE")
-        if await is_admin(msg) and self.current_process is not None:
+        if await is_admin(msg) and self.current_console is not None:
             if msg.channel.id == self.current_console:
                 await self.console_write(msg.content)
 
