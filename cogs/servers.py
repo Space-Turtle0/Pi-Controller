@@ -4,7 +4,6 @@ import core.common as common
 import core.embed as ebed
 import shlex
 import zipfile
-import random
 import discord
 import asyncio
 import os
@@ -76,8 +75,7 @@ async def load_embed(meta: dict) -> discord.Embed:
         if isinstance(meta['embed_color'], str):
             embed = discord.Embed(color=ebed.hex_to_rgb(meta['embed_color']))
         elif isinstance(meta['embed_color'], list):  # TODO: Add error handling for JSON format.
-            color = random.choice(meta['embed_color'])
-            embed = discord.Embed(color=ebed.hex_to_rgb(color))
+            embed = discord.Embed(color=ebed.randomrgb(colorlist=meta['embed_color']))
         else:
             embed = discord.Embed(color=ebed.randomrgb())
     else:

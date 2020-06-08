@@ -2,13 +2,21 @@ import discord
 import random
 
 
-def randomrgb() -> discord.Color:
-    """Get a random Discord Color Object"""
-    values = []
-    while len(values) < 3:
-        values.append(random.randint(0, 255))
-    color = discord.Color.from_rgb(values[0], values[1], values[2])
-    return color
+def randomrgb(colorlist: list = None) -> discord.Color:
+    """Get a random Discord Color Object
+
+    :param colorlist: provide a list of colors to choose from.
+    :type colorlist: list, optional"""
+    if colorlist is not None:
+        colorhex = random.choice(colorlist)
+        color = hex_to_rgb(colorhex)
+        return color
+    else:
+        values = []
+        while len(values) < 3:
+            values.append(random.randint(0, 255))
+        color = discord.Color.from_rgb(values[0], values[1], values[2])
+        return color
 
 
 def hex_to_rgb(code) -> discord.Color:  # used from https://gist.github.com/matthewkremer/3295567#gistcomment-3098081
