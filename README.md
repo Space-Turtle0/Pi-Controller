@@ -19,7 +19,8 @@ Feel free to modify or use to host your own servers if you like.
 
 ## Planned Features/To-Do:
 - General:
-    - Switch from `requests` to `aiohttp`
+    - Switch from `requests` to `aiohttp`.
+    - Make getting server directories into a function.
     - Error handling/more forgiving commands.
         - Shutdown server before closing bot with shutdown.
         - If no server is running, stop certain commands from attempting execution.
