@@ -118,8 +118,8 @@ class Servers(commands.Cog):
     async def download(self, server_data: dict):
         """Initiates download functions for the given server."""
         print("Running download")
-        main_dir = os.getcwd()
-        server_dir = await makedir(server_data['meta']['directories']['main'])
+        main_dir = common.getbotdir()
+        server_dir = await makedir(os.path.join("data", "servers", server_data['meta']['directories']['main']))
         os.chdir(server_dir)
         file_dir = server_data['download']['file']
         link = server_data['download']['link']
@@ -146,7 +146,7 @@ class Servers(commands.Cog):
         if self.current_process is not None:
             if self.current_process.stdout.at_eof() is not True:
                 print("Waiting for console output...")
-                data = await asyncio.wait_for(self.current_process.stdout.readline(), 3)
+                data = await self.current_process.stdout.readline()
                 reply = data.decode().strip()
                 await channel.send(reply)
                 print("Sent: {}".format(reply))
@@ -237,11 +237,13 @@ class Servers(commands.Cog):
     @commands.check(is_admin)
     async def start(self, ctx, server_name: str):
         """Start a server."""
-        if os.path.exists(os.path.join(common.getbotdir(), "data", "servers", "{}.json".format(server_name))):
-            self.server_data = await load_file_args(await common.loadjson("data/servers/{}.json".format(server_name)))
+        if os.path.exists(os.path.join(common.getbotdir(), "data", "json", "{}.json".format(server_name))):
+            self.server_data = await load_file_args(await common.loadjson("data/json/{}.json".format(server_name)))
             print("Loaded '{}' server data.".format(server_name))
-            if await dircheck(self.server_data['meta']['directories']['main']):
-                os.chdir(self.server_data['meta']['directories']['main'])  # so shell commands run in their directories
+            if await dircheck(os.path.join("data", "servers", self.server_data['meta']['directories']['main'])):
+                os.chdir(os.path.join("data",
+                                      "servers",
+                                      self.server_data['meta']['directories']['main']))  # so shell commands run in their directories
                 await self.run_command("start")
                 embed = await load_embed(self.server_data['meta'])
                 embed.description = "Starting server."
@@ -269,7 +271,7 @@ class Servers(commands.Cog):
         """Get a server's JSON data sent to you in DM's."""
         await ctx.author.send(file=discord.File(os.path.join(common.getbotdir(),
                                                              "data",
-                                                             "servers",
+                                                             "json",
                                                              "{}.json".format(jsonfile))))
 
     @json.command(pass_context=True)
@@ -282,7 +284,7 @@ class Servers(commands.Cog):
             await ctx.send(embed=embed)
         else:
             for file in ctx.message.attachments:
-                savefile = os.path.join(common.getbotdir(), "data", "servers", server + ".json")
+                savefile = os.path.join(common.getbotdir(), "data", "json", server + ".json")
                 await download_file(file.url, savefile)
                 embed = discord.Embed(color=ebed.randomrgb())
                 embed.description = "The file '{}.json' was overwritten with new data.".format(server)
@@ -298,7 +300,7 @@ class Servers(commands.Cog):
             await ctx.send(embed=embed)
         else:
             for file in ctx.message.attachments:
-                savefile = os.path.join(common.getbotdir(), "data", "servers", server + ".json")
+                savefile = os.path.join(common.getbotdir(), "data", "json", server + ".json")
                 await download_file(file.url, savefile)
                 embed = discord.Embed(color=ebed.randomrgb())
                 embed.description = "The file '{}.json' was added to the server list."
@@ -343,7 +345,7 @@ class Servers(commands.Cog):
                               color=color)
         count = 0
         msg = ""
-        for file in os.listdir(os.path.join(common.getbotdir(), "data", "servers")):
+        for file in os.listdir(os.path.join(common.getbotdir(), "data", "json")):
             count += 1
             msg += "\n**-** {}".format(os.path.splitext(file)[0])
         embed.add_field(name="{} available".format(count), value=msg, inline=False)
