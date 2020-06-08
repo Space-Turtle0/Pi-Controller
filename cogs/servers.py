@@ -229,13 +229,14 @@ class Servers(commands.Cog):
 
     @commands.group(aliases=["servers"])
     async def server(self, ctx):
+        """Manages server control functions."""
         if ctx.invoked_subcommand is None:
             await ctx.send("Invalid command.")
 
     @server.command(pass_context=True)
     @commands.check(is_admin)
     async def start(self, ctx, server_name: str):
-        """Start a server"""
+        """Start a server."""
         if os.path.exists(os.path.join(common.getbotdir(), "data", "servers", "{}.json".format(server_name))):
             self.server_data = await load_file_args(await common.loadjson("data/servers/{}.json".format(server_name)))
             print("Loaded '{}' server data.".format(server_name))
@@ -256,9 +257,57 @@ class Servers(commands.Cog):
         else:
             await ctx.send("No server by '{}' found".format(server_name))
 
+    @commands.group()
+    async def json(self, ctx):
+        """Manages server json files."""
+        if ctx.invoked_subcommand is None:
+            await ctx.send("Invalid command.")
+
+    @json.command(pass_context=True)
+    @commands.check(is_admin)
+    async def get(self, ctx, jsonfile):
+        """Get a server's JSON data sent to you in DM's."""
+        await ctx.author.send(file=discord.File(os.path.join(common.getbotdir(),
+                                                             "data",
+                                                             "servers",
+                                                             "{}.json".format(jsonfile))))
+
+    @json.command(pass_context=True)
+    @commands.check(is_admin)
+    async def replace(self, ctx, server):
+        """Replace a server's JSON data with new data from an attachment."""
+        if len(ctx.message.attachments) == 0:
+            embed = discord.Embed(color=ebed.randomrgb())
+            embed.description = "Please attach a file to replace '{}.json'".format(server)
+            await ctx.send(embed=embed)
+        else:
+            for file in ctx.message.attachments:
+                savefile = os.path.join(common.getbotdir(), "data", "servers", server + ".json")
+                await download_file(file.url, savefile)
+                embed = discord.Embed(color=ebed.randomrgb())
+                embed.description = "The file '{}.json' was overwritten with new data.".format(server)
+                await ctx.send(embed=embed)
+
+    @json.command(pass_context=True)
+    @commands.check(is_admin)
+    async def add(self, ctx, server):
+        """Upload a server's JSON file to the bot from an attachment."""
+        if len(ctx.message.attachments) == 0:
+            embed = discord.Embed(color=ebed.randomrgb())
+            embed.description = "Please attach a JSON file to add."
+            await ctx.send(embed=embed)
+        else:
+            for file in ctx.message.attachments:
+                savefile = os.path.join(common.getbotdir(), "data", "servers", server + ".json")
+                await download_file(file.url, savefile)
+                embed = discord.Embed(color=ebed.randomrgb())
+                embed.description = "The file '{}.json' was added to the server list."
+                await ctx.send(embed=embed)
+
     @server.command(pass_context=True)
     @commands.check(is_admin)
     async def stop(self, ctx):
+        """Stop the server by running the behaviour in the server's JSON file."""
         embed = await load_embed(self.server_data['meta'])
         embed.description = "Stopping server."
         await ctx.send(embed=embed)
@@ -267,6 +316,7 @@ class Servers(commands.Cog):
     @server.command(pass_context=True)
     @commands.check(is_admin)
     async def run(self, ctx, command):
+        """Run a command from the server's JSON file"""
         if self.server_data is None:
             embed = discord.Embed(color=ebed.randomrgb())
             embed.description = "No server running."
@@ -283,21 +333,6 @@ class Servers(commands.Cog):
             else:
                 embed.description = "No command '{command}' found.".format(command=command)
                 await ctx.send(embed=embed)
-
-    @server.group(pass_context=True)
-    @commands.check(is_admin)
-    async def data(self, ctx):
-        if ctx.invoked_subcommand is None:
-            await ctx.send("Invalid command.")
-
-    @data.command(pass_context=True)
-    @commands.check(is_admin)
-    async def get(self, ctx, file):
-        """Receive raw JSON serverdata from the loaded file."""
-        await ctx.author.send(file=discord.File(os.path.join(common.getbotdir(),
-                                                             "data",
-                                                             "servers",
-                                                             "{}.json".format(file))))
 
     @server.command(pass_context=True)
     @commands.check(is_admin)
@@ -317,6 +352,7 @@ class Servers(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, msg):
+        """Handles server console writing if it's in a defined console_channel."""
         if await is_admin(msg) and self.current_console is not None:
             if msg.channel.id == self.current_console:
                 await self.console_write(msg.content)

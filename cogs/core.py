@@ -29,11 +29,13 @@ class Core(commands.Cog):
 
     @commands.group()
     async def admins(self, ctx):
+        """Manage bot admins."""
         if ctx.invoked_subcommand is None:
             await ctx.send("Invalid command.")
 
     @admins.command()
     async def list(self, ctx):
+        """List all admins."""
         data = await common.loadjson("data/data.json")
         count = 0
         msg = ""
@@ -58,6 +60,7 @@ class Core(commands.Cog):
     @admins.command(pass_context=True)
     @commands.check(is_admin)
     async def add(self, ctx, user: discord.User):
+        """Add an admin"""
         data = await common.loadjson("data/data.json")
         if user.id not in data['admins']:
             data['admins'].append(user.id)
@@ -69,8 +72,7 @@ class Core(commands.Cog):
     @commands.command(pass_context=True)
     @commands.check(is_admin)
     async def restart(self, ctx):
-        """Run the given command and close the python interpreter.
-            If no command is given, it will just close."""
+        """Restart the bot."""
         print("Running restart")
         embed = discord.Embed(color=ebed.randomrgb())
         embed.description = "Be right back!"
@@ -80,13 +82,16 @@ class Core(commands.Cog):
     @commands.command(pass_context=True)
     @commands.check(is_admin)
     async def shutdown(self, ctx):
+        """Shut down the bot."""
         embed = discord.Embed(color=ebed.randomrgb())
         embed.description = "Goodbye!"
         await ctx.send(embed=embed)
         sys.exit()
 
     @commands.command(pass_context=True)
+    @commands.check(is_admin)
     async def getbotdir(self, ctx):
+        """Get bot directory information."""
         embed = discord.Embed(color=ebed.randomrgb())
         embed.add_field(name="Bot Dir", value=common.getbotdir())
         embed.add_field(name="Arg 0", value="name: {}".format(str(sys.argv[0])))
@@ -96,6 +101,7 @@ class Core(commands.Cog):
 
     @commands.command()
     async def status(self, ctx):
+        """Get system status."""
         color = ebed.randomrgb()
         embed = discord.Embed(title="System Status",
                               timestamp=self.sys_status["UPDATE"],
@@ -118,10 +124,12 @@ class Core(commands.Cog):
 
     @commands.command()
     async def invite(self, ctx):
+        """Get a bot invite."""
         await ctx.send("https://discord.com/api/oauth2/authorize?client_id=714607226756661258&permissions=116800&scope=bot")
 
     @tasks.loop(minutes=1)
     async def sys_monitor(self):
+        """Updates the dictionary used to track system information."""
         tz = pytz.timezone("America/New_York")
         self.sys_status["UPDATE"] = pytz.utc.localize(datetime.datetime.utcnow())
         self.sys_status["CPU"] = round(psutil.cpu_percent())
