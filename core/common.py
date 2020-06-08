@@ -1,13 +1,14 @@
 import aiofiles
+import aiohttp
 import os
 import sys
 import json
 
 
-botdir = None
+botdir = ""
 
 
-def setbotdir():
+def setbotdir() -> str:
     global botdir
     botdir = os.path.dirname(os.path.realpath(sys.argv[0]))
     return botdir
@@ -17,6 +18,19 @@ def getbotdir() -> str:
     """Returns the root directory of the bot as a string."""
     global botdir
     return botdir
+
+
+async def download_file(url, save_file, chunk_size=512):  # move to thread
+    """Download the given server and initialize setup. Non-Blocking, requires await."""
+    print("Running download_file")
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as resp:
+            async with aiofiles.open(save_file, "wb") as fd:
+                while True:
+                    chunk = await resp.content.read(chunk_size)
+                    if not chunk:
+                        break
+                    fd.write(chunk)
 
 
 async def makefile(filename: str, data: any):

@@ -6,7 +6,6 @@ import shlex
 import zipfile
 import random
 import discord
-import requests
 import asyncio
 import os
 
@@ -49,18 +48,6 @@ async def load_file_args(data: dict) -> dict:
                 if isinstance(item, dict):
                     data[key][data[key].index(item)] = await load_file_args(item)
     return data
-
-
-async def download_file(url, save_file):  # move to thread
-    """Download the given server and initialize setup."""
-    print("Running download_file")
-    r = requests.get(url, stream=True)
-    with open(save_file, "wb") as fd:
-        i = 0
-        for chunk in r.iter_content(chunk_size=512):
-            if chunk:
-                i += 1
-                fd.write(chunk)
 
 
 async def makedir(dir_name: str) -> str:
@@ -123,7 +110,7 @@ class Servers(commands.Cog):
         os.chdir(server_dir)
         file_dir = server_data['download']['file']
         link = server_data['download']['link']
-        await download_file(link, file_dir)
+        await common.download_file(link, file_dir)
         await self.run_command("setup")
         os.chdir(main_dir)
 
@@ -285,7 +272,7 @@ class Servers(commands.Cog):
         else:
             for file in ctx.message.attachments:
                 savefile = os.path.join(common.getbotdir(), "data", "json", server + ".json")
-                await download_file(file.url, savefile)
+                await common.download_file(file.url, savefile)
                 embed = discord.Embed(color=ebed.randomrgb())
                 embed.description = "The file '{}.json' was overwritten with new data.".format(server)
                 await ctx.send(embed=embed)
@@ -301,7 +288,7 @@ class Servers(commands.Cog):
         else:
             for file in ctx.message.attachments:
                 savefile = os.path.join(common.getbotdir(), "data", "json", server + ".json")
-                await download_file(file.url, savefile)
+                await common.download_file(file.url, savefile)
                 embed = discord.Embed(color=ebed.randomrgb())
                 embed.description = "The file '{}.json' was added to the server list."
                 await ctx.send(embed=embed)

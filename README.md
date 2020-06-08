@@ -19,7 +19,7 @@ Feel free to modify or use to host your own servers if you like.
 
 ## Planned Features/To-Do:
 - General:
-    - Switch from `requests` to `aiohttp`.
+    - ~~Switch from `requests` to `aiohttp`.~~ (Done)
     - Make getting server directories into a function.
     - Error handling/more forgiving commands.
         - Shutdown server before closing bot with shutdown.
@@ -34,6 +34,7 @@ Feel free to modify or use to host your own servers if you like.
     - Send messages whenever a JSON command is run or a server is started/stopped.
 - JSON Server Control:
     - Rewrite JSON command parsing to accept arguments from Discord.
+        - Split each command argument into its' own function. Provide cleaner code.
     - Experiment with dynamically adding bot commands referencing the JSON Command.
         - Requires ability to programmatically add commands. Is this even possible?
     - Timer JSON Command Argument
