@@ -13,6 +13,7 @@ botdir = ""
 def setbotdir() -> str:
     global botdir
     botdir = os.path.dirname(os.path.realpath(sys.argv[0]))
+    print("Bot directory has been set: {}".format(botdir))
     return botdir
 
 

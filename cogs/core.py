@@ -6,7 +6,6 @@ import pytz
 import discord
 import requests
 import psutil
-import subprocess
 import sys
 import os
 
@@ -60,14 +59,28 @@ class Core(commands.Cog):
     @admins.command(pass_context=True)
     @commands.check(is_admin)
     async def add(self, ctx, user: discord.User):
-        """Add an admin"""
+        """Add an admin."""
         data = await common.loadjson("data/data.json")
         if user.id not in data['admins']:
             data['admins'].append(user.id)
-            await common.dumpjson(data, "data/data.json")
+            await common.dumpjson(data, os.path.join(common.getbotdir(), "data/data.json"))
             await ctx.send("{} is now a bot admin.".format(user.mention))
         else:
             await ctx.send("{} is already a bot admin.".format(user.mention))
+
+    @admins.command(pass_context=True)
+    @commands.is_owner()
+    async def remove(self, ctx, user: discord.User):
+        """Revoke admin permissions."""
+        data = await common.loadjson("data/data.json")
+        embed = discord.Embed(color=ebed.randomrgb())
+        if user.id in data['admins']:
+            data['admins'].pop(data['admins'].index(user.id))
+            await common.dumpjson(data, os.path.join(common.getbotdir(), "data/data.json"))
+            embed.description = "{} is no longer a bot admin.".format(user.mention)
+        else:
+            embed.description = "{} is not a bot admin.".format(user.mention)
+        await ctx.send(embed=embed)
 
     @commands.command(pass_context=True)
     @commands.check(is_admin)
