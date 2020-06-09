@@ -157,7 +157,17 @@ class Core(commands.Cog):
         self.sys_status["BOOT"] = tz.localize(datetime.datetime.fromtimestamp(psutil.boot_time())).strftime("%Y-%m-%d%t%H:%M:%S %Z")
         self.sys_status["IP"] = requests.get("https://api.ipify.org?format=json").json()['ip']
         self.sys_status["LATENCY"] = self.bot.latency
+    
+    @commands.command()
+    async def helpem(ctx):
+      """Help Command"""
+      embed = discord.Embed(title="Your title here", description="Your desc here", color= "00FF00")
+      embed.add_field(name="Name", value="you can make as much as fields you like to")
+      #embed.set_footer(name="footer") if you like to
+      await ctx.send(embed=embed)
+
 
 
 def setup(bot):
     bot.add_cog(Core(bot))
+
