@@ -3,15 +3,9 @@ from cogs.core import is_admin
 import core.common as common
 import core.embed as ebed
 import shlex
-import zipfile
 import discord
 import asyncio
 import os
-
-
-async def dircheck(directory) -> bool:
-    print("Running dircheck")
-    return os.path.exists(directory)
 
 
 async def load_args(data: dict) -> dict:
@@ -49,17 +43,6 @@ async def load_file_args(data: dict) -> dict:
     return data
 
 
-async def makedir(dir_name: str) -> str:
-    """Creates directory if needed, returns directory path."""
-    print("Running makedir")
-    if await dircheck(dir_name) is False:
-        os.makedirs(dir_name)
-        print("Made directory '{}'".format(dir_name))
-    else:
-        print("Directory '{}' already exists".format(dir_name))
-    return dir_name
-
-
 async def asyncio_subprocess(program):
     """Runs a async compatible subprocess, returning the created process."""
     process = await asyncio.create_subprocess_exec(*program,
@@ -89,6 +72,11 @@ async def load_embed(meta: dict) -> discord.Embed:
     return embed
 
 
+def getserverjson(server: str):
+    path = os.path.join(common.getbotdir(), "data", "json", "{}.json".format(server))
+    return path
+
+
 class Servers(commands.Cog):
     """Cog focused for controlling 3rd-Party Servers through JSON data."""
     def __init__(self, bot):
@@ -100,17 +88,25 @@ class Servers(commands.Cog):
         self.main_dir = os.getcwd()
         self.server_cleanup.start()
 
+    def getserverdir(self, dirname: str):
+        """Get the directory of the given server."""
+        main_dir = self.server_data['meta']['directories']['main']
+        if dirname == 'main':
+            return os.path.join(common.getbotdir(), "data", "servers", main_dir)
+        else:
+            server_dir = self.server_data['meta']['directories']['main'][dirname]
+            return os.path.join(common.getbotdir(), "data", "servers", main_dir, server_dir)
+
     async def download(self, server_data: dict):
         """Initiates download functions for the given server."""
         print("Running download")
-        main_dir = common.getbotdir()
-        server_dir = await makedir(os.path.join("data", "servers", server_data['meta']['directories']['main']))
+        server_dir = common.makedir(self.getserverdir('main'))
         os.chdir(server_dir)
         file_dir = server_data['download']['file']
         link = server_data['download']['link']
         await common.download_file(link, file_dir)
         await self.run_command("setup")
-        os.chdir(main_dir)
+        os.chdir(common.getbotdir())
 
     @tasks.loop(seconds=1)
     async def server_cleanup(self):
@@ -152,14 +148,6 @@ class Servers(commands.Cog):
             await self.current_process.stdin.drain()
             print("Finished console_write")
 
-    def extract(self, path, dest):
-        with zipfile.ZipFile(path, 'r') as file:
-            file.extractall(os.path.join(common.getbotdir(), self.server_data['meta']['directories'][dest]))
-
-    async def asyncio_extract(self, path, dest):
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, self.extract, path, dest)
-
     async def run_command(self, command: str):  # TODO: Move each case into its' own function for handling.
         """Process the given command found in serverdata."""
         statustypes = {"playing": discord.ActivityType.playing,
@@ -176,11 +164,11 @@ class Servers(commands.Cog):
             if 'file' in step.keys():
                 print("Running file function for step: {}".format(step))
                 if 'create' in step['file'].keys():
-                    await common.makefile(os.path.join(self.server_data['meta']['directories']['main'],
-                                                       step['file']['create']['name']),
+                    await common.makefile(os.path.join(self.getserverdir(step['dir']), step['file']['create']['name']),
                                           step['file']['create']['data'])
                 if 'extract' in step['file'].keys():
-                    await self.asyncio_extract(step['file']['extract']['name'], step['file']['extract']['folder'])
+                    await common.asyncio_extract(step['file']['extract']['name'],
+                                                 self.getserverdir(step['file']['extract']['folder']))
             elif 'presence' in step.keys():
                 if step['presence']['type'] is not None:
                     activity = discord.Activity(name=step['presence']['status'],
@@ -204,8 +192,7 @@ class Servers(commands.Cog):
                 await self.run_command(step['command'])
             elif 'directory' in step.keys():
                 print("Changing directory to: {}".format(step['directory']))
-                os.chdir(os.path.join(common.getbotdir(), self.server_data['meta']['directories']['main'],
-                                      self.server_data['meta']['directories'][step['directory']]))
+                os.chdir(self.getserverdir(step['directory']))
             elif 'process' in step.keys():
                 if step['process'] == 'kill':
                     print("Killing current process.")
@@ -222,13 +209,11 @@ class Servers(commands.Cog):
     @commands.check(is_admin)
     async def start(self, ctx, server_name: str):
         """Start a server."""
-        if os.path.exists(os.path.join(common.getbotdir(), "data", "json", "{}.json".format(server_name))):
-            self.server_data = await load_file_args(await common.loadjson("data/json/{}.json".format(server_name)))
+        if os.path.exists(getserverjson(server_name)):
+            self.server_data = await load_file_args(await common.loadjson(getserverjson(server_name)))
             print("Loaded '{}' server data.".format(server_name))
-            if await dircheck(os.path.join("data", "servers", self.server_data['meta']['directories']['main'])):
-                os.chdir(os.path.join("data",
-                                      "servers",
-                                      self.server_data['meta']['directories']['main']))  # so shell commands run in their directories
+            if common.dircheck(self.getserverdir('main')):
+                os.chdir(self.getserverdir('main'))  # so shell commands run in their directories
                 await self.run_command("start")
                 embed = await load_embed(self.server_data['meta'])
                 embed.description = "Starting server."
@@ -254,10 +239,7 @@ class Servers(commands.Cog):
     @commands.check(is_admin)
     async def get(self, ctx, jsonfile):
         """Get a server's JSON data sent to you in DM's."""
-        await ctx.author.send(file=discord.File(os.path.join(common.getbotdir(),
-                                                             "data",
-                                                             "json",
-                                                             "{}.json".format(jsonfile))))
+        await ctx.author.send(file=discord.File(getserverjson(jsonfile)))
 
     @json.command(pass_context=True)
     @commands.check(is_admin)
@@ -269,7 +251,7 @@ class Servers(commands.Cog):
             await ctx.send(embed=embed)
         else:
             for file in ctx.message.attachments:
-                savefile = os.path.join(common.getbotdir(), "data", "json", server + ".json")
+                savefile = getserverjson(server)
                 await common.download_file(file.url, savefile)
                 embed = discord.Embed(color=ebed.randomrgb())
                 embed.description = "The file '{}.json' was overwritten with new data.".format(server)
@@ -285,7 +267,7 @@ class Servers(commands.Cog):
             await ctx.send(embed=embed)
         else:
             for file in ctx.message.attachments:
-                savefile = os.path.join(common.getbotdir(), "data", "json", server + ".json")
+                savefile = getserverjson(server)
                 await common.download_file(file.url, savefile)
                 embed = discord.Embed(color=ebed.randomrgb())
                 embed.description = "The file '{}.json' was added to the server list."
