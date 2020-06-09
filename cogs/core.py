@@ -27,7 +27,7 @@ class Core(commands.Cog):
         self.platform = sys.platform
         self.data_path = common.getbotdir()
 
-    @commands.group()
+    @commands.group(aliases=['admin'])
     async def admins(self, ctx):
         """Manage bot admins."""
         if ctx.invoked_subcommand is None:
