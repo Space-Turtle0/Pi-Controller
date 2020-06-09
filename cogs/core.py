@@ -6,6 +6,7 @@ import pytz
 import discord
 import requests
 import psutil
+import math
 import sys
 import os
 
@@ -122,6 +123,8 @@ class Core(commands.Cog):
         embed.add_field(name="RAM", value="{}%".format(self.sys_status["RAM"]))
         embed.add_field(name="CPU", value="{}%".format(self.sys_status["CPU"]))
         embed.add_field(name="DISK", value="{}%".format(self.sys_status["DISK"]))
+        if not math.isnan(self.sys_status['LATENCY']):  # if called before this has a value.
+            embed.add_field(name="PING", value="{}ms".format(round(self.sys_status["LATENCY"]*1000)))
         if self.platform == 'linux':  # platform specific feature
             embed.add_field(name="Temperature",
                             value="{}°C/{}°F".format(self.sys_status["TEMPC"], self.sys_status["TEMPF"]))
@@ -153,6 +156,7 @@ class Core(commands.Cog):
             self.sys_status["TEMPC"] = psutil.sensors_temperatures()
         self.sys_status["BOOT"] = tz.localize(datetime.datetime.fromtimestamp(psutil.boot_time())).strftime("%Y-%m-%d%t%H:%M:%S %Z")
         self.sys_status["IP"] = requests.get("https://api.ipify.org?format=json").json()['ip']
+        self.sys_status["LATENCY"] = self.bot.latency
 
 
 def setup(bot):
