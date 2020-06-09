@@ -10,7 +10,7 @@ logging.basicConfig(level=logging.INFO)
 
 # Discord Bot Controller
 bot = commands.Bot(command_prefix="pi.")
-cogs = ['cogs.core', 'cogs.servers']
+cogs = ['cogs.core', 'cogs.servers', 'cogs.github']
 if __name__ == '__main__':
     for cog in cogs:
         bot.load_extension(cog)

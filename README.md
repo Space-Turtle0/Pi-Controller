@@ -20,13 +20,17 @@ Feel free to modify or use to host your own servers if you like.
 ## Planned Features/To-Do:
 - General:
     - ~~Switch from `requests` to `aiohttp`.~~ (Done)
-    - Make getting server directories into a function.
+    - ~~Make getting server directories into a function.~~ (Done)
     - Error handling/more forgiving commands.
         - Shutdown server before closing bot with shutdown.
         - If no server is running, stop certain commands from attempting execution.
     - File request system (In-Progress)
         - Request server directories to be sent to you in DMs
         - Can be sent back to replace data that is there
+- Contributors System:
+    - Allow contributors to easily look up their own contributions
+    - Link Discord Users to Github Profiles
+    - Add a bio option for contributors to use.
 - Admin System:
     - Extend to allow server specific admins/moderators, able to control aspects relating to their server.
 - Console Channel:
@@ -34,9 +38,10 @@ Feel free to modify or use to host your own servers if you like.
     - Send messages whenever a JSON command is run or a server is started/stopped.
 - JSON Server Control:
     - Rewrite JSON command parsing to accept arguments from Discord.
-        - Split each command argument into its' own function. Provide cleaner code.
+        - Split each JSON Command Argument into its' own function. Provide cleaner code.
     - Experiment with dynamically adding bot commands referencing the JSON Command.
         - Requires ability to programmatically add commands. Is this even possible?
+            - it is possible, Metaclasses.
     - Timer JSON Command Argument
         - Wait a specified amount of time before continuing.
     - File->Download JSON Command Argument
